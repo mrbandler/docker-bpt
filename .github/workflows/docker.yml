@@ -57,8 +57,21 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Sign the published Docker image
-        if: ${{ github.event_name != 'pull_request' }}
+      - name: Sign image with GitHub OIDC Token
         env:
-          COSIGN_EXPERIMENTAL: "true"
-        run: echo "${{ steps.meta.outputs.tags }}" | xargs -I {} cosign sign {}@${{ steps.build-and-push.outputs.digest }}
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          TAGS: ${{ steps.docker_meta.outputs.tags }}
+        run: |
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag}@${DIGEST} "
+          done
+          cosign sign --yes ${images}
+
+      - name: Sign image with GitHub OIDC Token
+        run: |
+          cosign sign --yes --rekor-url "https://rekor.sigstore.dev/" ${{ steps.build-and-push.outputs.digest }}
+
+      - name: Verify signed image with GitHub OIDC Token
+        run: |
+          cosign verify --rekor-url "https://rekor.sigstore.dev/" ${{ steps.build-and-push.outputs.digest }} --certificate-identity "https://github.com/mrbandler/bpt-docker/.github/workflows/docker.yaml@refs/heads/master" --certificate-oidc-issuer "https://token.actions.githubusercontent.com" | jq .
